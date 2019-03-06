@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,minimum-scale=1.0,maximum-scale=1.0,initial-scale=1.0,user-scalable=no">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>音乐播放器</title>
+    <link rel="stylesheet" href="css/style.css" type="text/css" />
+    <script src="jquery-2.1.3.min.js"></script>
+    <script>
+        $(function(){
+        // console.log($(window).width());
+        var viewWidth = $(window).width();
+        var viewHeight = $(window).height();
+        var desWidth = 640; //设计图宽
+        var touchstart = 'touchstart';
+        var touchmove = 'touchmove';
+        var touchend = 'touchend';
+        var id = 0;
+        var index = 0; //指定列表索引
+        var oAudio = $('#audio1').get(0);
+        // 获取加载 容器
+        var $loading = $('#loading');
+
+
+        var $main =$('#main');//获取父级
+        var $listContent = $("#listContent");
+        var $listContentUl = $('#list_ContentUl');
+        var $listTitle = $('#listTitle');
+        var $listAudio = $('#listAudio');
+        var $listAudioImg = $('#list_AudioImg');
+        var $listAudioText = $('#list_AudioText');
+        var $listAudioBtn = $('#list_AudioBtn');
+
+        var $musicDetails = $('#musicDetails');
+        var $detailsTitle = $('#detailsTitle');
+        var $detailsName = $('#detailsName');
+
+        var $detailsAudioProUp = $('#detailsAudioProUp');
+        var $detailsAudioProBar = $('#detailsAudioProBar');
+        var $detailsNowTime = $('#detailsNowTime');
+        var $detailsAllTime = $('#detailsAllTime');
+        var $detailsPlay = $('#detailsPlay');
+        var $detailsPrev = $('#detailsPrev');
+        var $detailsNext = $('#detailsNext');
+        var $detailsLyric = $('#detailsLyric');
+        var $detailsLyricUl = $('#detailsLyricUl');
+
+        var $detailsAudio = $('#detailsAudio');
+        var $detailsMessage = $('#detailsMessage');
+        var $detailsMessageTa = $('#detailsMessageTa');
+        var $detailsMessageBtn = $('#detailsMessageBtn');
+        var $detailsMessageUl = $('#detailsMessageUl');
+        var $detailsBtn = $('#detailsBtn');
+ 
+        function init(){//整个项目的初始化
+            loadingFn();
+            device();
+            musicList.init();
+            musicDetails.init();
+            musicAudio.init();
+        }
+
+        function loadingFn(){ //loading 效果
+            var arr = ['bg.jpg','detailsBg.jpg','fh.jpg'];
+            var iNum = 0;
+            $.each(arr,function(i,img){
+                var objImg = new Image();
+                objImg.onload = function(){
+                    iNum++;
+                    if(iNum == arr.length){
+                        $loading.animate({opacity:0},1000,function(){
+                            $(this).remove();
+                        })
+                    }
+                };
+                // 如果图片加载失败
+                objImg.onerror = function(){
+                    $loading.animate({opacity:0},1000,function(){
+                        $(this).remove();
+                    });
+                }
+                objImg.src = 'img/'+img;
+            });
+
+        }
+
+
+        
+        function device(){//兼容PC和移动端
+            // console.log( navigator.userAgent );
+            var isMobile = /Mobile/i.test(navigator.userAgent);
+            if(viewWidth > desWidth){//视口大于设计图/pc
+                $main.css('width','640px');
+            }
+            if(!isMobile){
+                touchstart = 'mousedown';
+                touchmove = 'mousemove';
+                touchend = 'mouseup';
+            }
+            $(window).resize(function(){
+                viewWidth = $(window).width();
+                viewHeight = $(window).height();
+                musicDetails.sildeDown();
+            });
+        }
+
+        var musicList = (function(){  //音乐列表页操作
+
+            var changeUrl ='http://www.zcdzfd.cn/';
+            var listUrl = 'musicList.php'; //便于维护
+            var downY = 0;
+            var prevY = 0;
+            var downT = 0;//按下的top值
+            var parentH = $listContent.height();
+            var childH = $listContentUl.height();
+            var onoff1 = true;//h开关
+            var onoff2 = true;//f开关
+            var onoff3 = true;//判断单点&滑屏
+            var timer = null; //离开触摸时
+            var speed = 0;//出手瞬间的值
+            // 懒加载
+            var $loadingLi = null;
+            var page = 0;//初始页
+
+
+            function init(){ //整个项目的初始
+                data();
+                bind();
+                moveScroll();
+            }
+
+            function data (){ //数据
+                $.ajax({
+                    url : listUrl,
+                    type : 'GET',
+                    dataType : 'json',
+                    success : function(data){
+                        $.each(data,function(i,obj){
+                        var $li = `<li musicId="${obj.id}"><h3 class="title">${obj.musicName}</h3><p class="name">${obj.name}</p></li>`;
+						$listContentUl.append($li);
+                        });
+                        childH = $listContentUl.height();//ajax获取后重新获取高度 
+                    }
+                });
+            }
+
+            function bind(){ //事件操作
+                $listTitle.on(touchstart,function(){
+                    window.location = changeUrl;
+                } );
+                $listContentUl.delegate('li',touchend,function(){
+                    if(onoff3){
+                        $(this).attr('class','active').siblings().attr('class','');
+                        id = $(this).attr('musicId');
+                        musicAudio.loadMusic(id);
+                        index = $(this).index();
+                    }
+                } );
+                $listAudio.on( touchstart,function(){
+                    musicDetails.sildeUp();
+                } );
+            }
+            
+            function moveScroll(){//滑动列表
+                //考虑js拖拽
+                $(document).on(touchmove,function(ev){
+                    // iPhone默认滑动整个页面，因此取消默认行为
+                    ev.preventDefault();
+                } );
+                // 兼容处理
+                $listContentUl.on(touchstart,function(ev){
+                    if(parentH>childH){return false;}
+
+                    var touch = ev.originalEvent.changedTouches ? ev.originalEvent.changedTouches[0] : ev;
+                    
+                    var This = this;
+                    downY = touch.pageY; //按下存位置
+                    prevY = touch.pageY;
+                    downT = $(this).position().top;
+                    onoff1 = true;
+                    onoff2 = true;
+                    onoff3 = true;
+                    clearInterval(timer);//按下清除定时器
+
+                    $(document).on(touchmove+'.move',function(ev){
+                        // alert(111);
+                        onoff3 = false;
+                        var touch = ev.originalEvent.changedTouches ? ev.originalEvent.changedTouches[0] : ev;
+                        var iTop = $(This).position().top;
+
+                        speed = touch.pageY - prevY; //最后两次的差值
+                        prevY = touch.pageY; //利用时间差
+
+                        if(iTop >= 0){ //head
+                            if(onoff1){
+                                onoff1 = false;
+                                downY = touch.pageY;
+                            }
+                            $(This).css('transform','translate3d(0,'+(touch.pageY-downY+downT)/3+'px,0)');
+                        }else if(iTop<=parentH - childH){//footer
+                            if(onoff2){
+                                onoff2 = false;
+                                downY = touch.pageY;
+                                $loadingLi = $('<li style="color:pink;">loading...</li>');
+                                $(This).append($loadingLi);
+                            }
+                            $(This).css('transform','translate3d(0,'+((touch.pageY-downY+downT)/3+(parentH-childH))+'px,0)');
+                        }else{ //contain
+                            $(This).css('transform','translate3d(0,'+(touch.pageY-downY+downT)+'px,0)');
+                            
+                        }
+                        
+                    
+                    } ); 
+                    $(document).on(touchend+'.move',function(){
+                        $(this).off('.move');  
+
+                        if($loadingLi){ //懒加载数据
+                            $loadingLi.remove();
+                            $loadingLi = null;
+                            $.ajax({
+                                url : 'pageMusic.php',
+                                type : 'GET',
+                                dataType:'json',
+                                data : { page : page },
+                                success : function(data){
+                                    console.log(data);
+                                    $.each(data,function(i,obj){
+                                    var $li = `<li musicId="${obj.id}"><h3 class="title">${obj.musicName}</h3><p class="name">${obj.name}</p></li>`;
+                                    $listContentUl.append($li);
+                                    });
+                                    childH = $listContentUl.height();//ajax获取后重新获取高度 
+                                    page++;
+                                }
+                            });
+                        }
+
+                        if(!onoff3){
+                        clearInterval(timer);
+                        timer = setInterval(function(){
+                            var iTop = $(This).position().top;
+                            if(Math.abs(speed)<=1 ){
+                                clearInterval(timer);
+                                if(iTop >= 0 || iTop > 50 || iTop <parentH-childH-50){
+                                    $(This).css('transition','.2s');
+                                    $(This).css('transform','translate3d(0,0,0)');
+                                }else if(iTop <= parentH - childH){
+                                    $(This).css('transition','.2s');
+                                    $(This).css('transform','translate3d(0,'+(parentH - childH)+'px,0)');
+                                }
+                            }else{
+                                 speed *= 0.9;
+                                $(This).css('transform','translate3d(0,'+(iTop + speed)+'px,0)');                                
+                            }
+                        },13);
+                        }
+                    } );
+                    return false;//阻止默认行为，and冒泡
+                } );
+                $listContentUl.on('transitionend webkitTransitionEnd',function(){
+                    // console.log(113 )监听过渡结束
+                    $(this).css('transition','');   
+                });
+            }
+
+            function show(sName,sMusicName,sImg){//显示
+                $listAudioImg.attr('src','img/'+sImg);
+                $listAudioText.find('h3').html(sMusicName);
+                $listAudioText.find('p').html(sName);
+                $listAudioBtn.show();
+
+            }
+
+
+            return {
+                init : init,
+                show : show
+            };
+
+        })();
+
+        //音乐🎵详情页 操作
+        var musicDetails = (function(){
+            var re = /\[[^[]+/g;//匹配歌词--[时间]
+            var arr = [];
+            var $li = null;
+            var iLiH = 0;
+            var downX = 0; //判断左右滑屏
+            var range = 20; //滑屏范围
+            var timer = null;
+            function init(){ //初始
+                $musicDetails.css('transform','translate3d(0,'+(viewHeight)+'px,0)');
+                $detailsMessage.css('transform','translate3d('+(viewWidth)+'px,0,0)');//改左右偏移
+                bind();
+            }
+            // 伸缩功能
+            function sildeUp(){ //向上展开
+                $musicDetails.css('transition','.5s');
+                $musicDetails.css('transform','translate3d(0,0,0)');
+            }
+            function sildeDown(){ //向下收缩 
+                $musicDetails.css('transform','translate3d(0,'+(viewHeight)+'px,0)');
+			    $musicDetails.one('transitionend weikitTransitionEnd',function(){
+				$detailsLyric.add($detailsAudio).css('transform','translate3d(0,0,0)');
+				$detailsMessage.css('transform','translate3d('+(viewWidth)+'px,0,0)');
+				$detailsBtn.find('li').eq(0).attr('class','active').siblings().attr('class','');
+                });
+            }
+            function bind(){
+                //事件操作
+                $detailsTitle.on(touchstart,function(){
+                    sildeDown();
+                } );
+                $musicDetails.on(touchstart,function(ev){
+                    var touch = ev.originalEvent.changedTouches ? ev.originalEvent.changedTouches[0] : ev;
+                    downX = touch.pageX;
+                    $(document).on(touchend+'.move',function(ev){
+                        $(this).off(".move");
+                        var touch = ev.originalEvent.changedTouches ? ev.originalEvent.changedTouches[0] : ev;
+                        if( touch.pageX-downX < -range ){//👈
+                            $detailsLyric.add($detailsAudio).css('transform','translate3d( '+(-viewWidth)+'px,0,0)');
+                            $detailsMessage.css("transform","translate3d(0,0,0)");
+                            $detailsBtn.find('li').eq(1).attr('class','active').siblings().attr('class','');
+                            loadMessage();
+                            clearInterval(timer);
+                            timer = setInterval(scrollMessage,3000);
+
+                        }else if( touch.pageX-downX > range ){//👉
+                            $detailsLyric.add($detailsAudio).css('transform','translate3d( 0,0,0)');
+                            $detailsMessage.css("transform",'translate3d( '+(viewWidth)+'px,0,0)');
+                            $detailsBtn.find('li').eq(0).attr('class','active').siblings().attr('class','');
+                            clearInterval(timer);
+                        }
+                    })
+                } );
+                $detailsMessageBtn.on(touchstart,function(){
+                    addMessage();
+                });
+            }
+            function show(sName,sMusicName,sLyric){//歌词显示
+                $detailsName.html(`${sMusicName}<span>${sName}</span>`);
+                $detailsLyricUl.empty().css('transform','translate3d(0,0,0)');
+                arr = sLyric.match(re);
+                
+                for(var i=0;i<arr.length;i++){
+                    arr[i] = [ formatTime(arr[i].substring(0,10)) ,arr[i].substring(10).trim() ];
+                }
+                for(var i=0;i<arr.length;i++){
+                    $detailsLyricUl.append(`<li>${arr[i][1]}</li>`);
+                }
+                $li = $detailsLyricUl.find('li');
+                $li.first().attr('class','active');
+                iLiH = $li.first().outerHeight(true);
+            }
+            function formatTime(num){//反向格式化日期
+                num = num.substring(1,num.length-1);
+                var arr = num.split(':');
+                return (parseFloat(arr[0]*60) + parseFloat(arr[1])).toFixed(2);
+            }
+            function scrollLyric(ct){//滚动歌词
+                // console.log(ct);
+                for(var i=0;i<arr.length;i++){
+                    if( i != arr.length-1 && ct > arr[i][0]&&ct< arr[i+1][0]){
+                        $li.eq(i).attr('class','active').siblings().attr('class','');
+                        if(i>3){
+                            $detailsLyricUl.css('transform','translate3d(0,'+(-iLiH*(i-3))+'px,0)');
+                        }else{
+                            $detailsLyricUl.css('transform','translate3d(0,0,0');
+                        }
+                    }else if(i == arr.length-1 && ct > arr[i][0]){
+                        $li.eq(i).attr('class','active').siblings().attr('class','');
+                        $detailsLyricUl.css('transform','translate3d(0,'+(-iLiH*(i-3))+'px,0)');
+                    }
+                }
+            }
+            // 载入留言
+            function loadMessage(){
+                $detailsMessageUl.empty();
+                $.ajax({
+                    url : 'loadMessage.php',
+                    type : 'GET',
+                    dataType : 'json',
+                    data : { mid : id },   //后端mid对应歌单id
+                    success : function (data){
+                        $.each(data,function(i,obj){
+                            var $li = $('<li>'+obj.text+'</li>');
+                            $detailsMessageUl.prepend($li);
+                        })
+                    }
+                });
+            }
+            //添加留言
+            function addMessage(){
+                var value = $detailsMessageTa.val();//获取留言信息
+                $detailsMessageTa.val('');//清空留言，便于下次操作
+                $.ajax({
+                    url : 'addMessage.php',
+                    type : 'POST',
+                    dataType : 'json',
+                    data : {mid : id ,text : value},
+                    success : function(data){
+                       if(data.code){
+                           var $li = $("<li>"+data.message+"</li>");
+                           $detailsMessageUl.prepend($li);
+                       }
+
+                    }
+                });
+            }
+            function scrollMessage(){
+    // 滚动留言
+                var $last = $detailsMessageUl.find('li').last();
+                $detailsMessageUl.prepend($last);
+                $last.css('opacity',0);
+                setTimeout(function(){
+                    $last.css('opacity',1);
+                },200);
+            }
+
+            return {
+                init : init,
+                sildeUp : sildeUp,
+                sildeDown : sildeDown,
+                show : show,
+                scrollLyric : scrollLyric
+            };
+        } )();
+ 
+
+//___________音乐播放器操作
+        var musicAudio = (function(){
+            var onoff =true; //音乐开关
+            var timer = null;
+            var scale = 0; //比例尺
+            var disX = 0;
+            var parentW = $detailsAudioProBar.parent().width();
+            function init(){ //初始
+                bind();
+
+            }
+            function loadMusic(){// 载入音乐
+                $.ajax({
+                    url : 'musicAudio.php',
+                    type : 'GET',
+                    dataType : 'json',
+                    data : { id : id },
+                    async : false, //防止iphone不加载 改成同步
+                    success : function(data){
+                        show(data);
+                    }
+                });
+
+            }
+            function show(obj){  //显示
+                var sName = obj.name;
+                var sMusicName = obj.musicName;
+                var sLyric = obj.lyric;
+                var sImg = obj.img;
+                var sAudio = obj.audio;
+                musicList.show(sName,sMusicName,sImg);
+                musicDetails.show(sName,sMusicName,sLyric);
+                oAudio.src = `audio/${sAudio}`;
+                play();
+                $(oAudio).one('canplaythrough',function(){
+                    
+                    $detailsAllTime.html( formatTime(oAudio.duration) );
+                } );
+                $(oAudio).one('ended',function(){
+                   next();
+                } );
+
+            }
+            function play(){
+                onoff = false;
+                $listAudioImg.addClass('move');
+                $listAudioBtn.css('backgroundImage','url(img/list_audioPause.png)'); 
+                $detailsPlay.css('backgroundImage','url(img/details_pause.png)'); 
+                oAudio.play();
+                playing();
+                clearInterval(timer);//防定时器累加
+                timer = setInterval(playing,1000);
+            }
+            function pause(){
+                onoff = true;
+                $listAudioImg.removeClass('move');
+                $listAudioBtn.css('backgroundImage','url(img/list_audioPlay.png)'); 
+                $detailsPlay.css('backgroundImage','url(img/details_play.png)'); 
+                oAudio.pause();
+                clearInterval(timer);//暂停--清定时器
+            }
+            function bind(){ //按钮事件
+                $listAudioBtn.add($detailsPlay).on( touchstart,function(){
+                    if(onoff){
+                        play();
+                    }else{
+                        pause();
+                    }
+                    return false; //阻止冒泡
+                } );
+                $detailsAudioProBar.on(touchstart,function(ev){
+                    var touch = ev.originalEvent.changedTouches ? ev.originalEvent.changedTouches[0] : ev;
+                    var This = this;
+                    disX = touch.pageX - $(this).position().left;
+                    clearInterval(timer);
+                    $(document).on(touchmove+'.move',function(ev){
+                        var touch = ev.originalEvent.changedTouches ? ev.originalEvent.changedTouches[0] : ev;
+                        var L = touch.pageX - disX;
+                        if(L<=0){
+                            L = 0; 
+                        }else if(L>=parentW){
+                            L = parentW;
+                        }
+                        $(This).css('left', L );
+                        scale = L/parentW;
+                    });
+                    $(document).on(touchend+'.move',function(){
+                        $(this).off('.move');
+                        oAudio.currentTime = scale*oAudio.duration;
+                        playing();
+                        clearInterval(timer);
+                        timer = setInterval(playing,1000);
+                    });
+                    return false;
+                });
+                $detailsPrev.on(touchstart,function(){
+                    prev();
+                });
+                $detailsNext.on(touchstart,function(){
+                    next();
+                });
+            }
+            function formatTime(num){
+                // 时间转换
+                num = parseInt(num);
+                var iM =Math.floor(num%3600/60);
+                var iS =Math.floor(num%60);
+                return toZero(iM) +':'+toZero(iS);
+            }
+            function toZero(num){
+                //2位数显示
+                if(num<10){
+                    return '0'+num;
+                }else{
+                    return ''+num;
+                }
+            }
+
+            function playing(){ // 播放ing时间
+               $detailsNowTime.html( formatTime(oAudio.currentTime ) );
+               scale = oAudio.currentTime/oAudio.duration;
+               $detailsAudioProUp.css('width',scale*100+'%');
+               $detailsAudioProBar.css('left',scale*100+'%');
+               musicDetails.scrollLyric(oAudio.currentTime);
+            }
+            function next(){ //next music
+                var $li = $listContentUl.find('li');
+                index = index == $li.length-1? 0 : index +1; //index循环处理🔁
+                id = $li.eq(index).attr('musicId');
+                $li.eq(index).attr('class','active').siblings().attr('class','');
+                loadMusic(id);
+            }
+            function prev(){ // 上一首歌
+                var $li = $listContentUl.find('li');
+                index = index == 0 ? $li.length-1 : index - 1; //index循环处理🔁
+                id = $li.eq(index).attr('musicId');
+                $li.eq(index).attr('class','active').siblings().attr('class','');
+                loadMusic(id);
+            }
+
+
+
+            return {
+                init : init,
+                loadMusic : loadMusic
+            };
+        })();
+
+
+
+
+        init();
+
+
+      });
+    </script>
+</head>
+
+<body>
+    <div id="main">
+        <div id="loading">
+            <div class="content1">
+                <div class="arc1"></div>
+                <div class="arc2"></div>
+                <div class="arc3"></div>
+                <div class="arc4"></div>
+            </div>
+            <div class="content2">
+                <div class="arc1"></div>
+                <div class="arc2"></div>
+                <div class="arc3"></div>
+                <div class="arc4"></div>
+            </div>
+        </div>
+        <div id="musicList">
+            <div id="listTitle" class="list_title">绯红二小姐<span class="list_tip"></span> </div>
+            <div id="listContent" class="list_content">
+                <!-- 播放列表 -->
+                <ul id="list_ContentUl">
+                    <!-- <li>
+                        <h3 class="title">绯红月下</h3>
+                        <p class="name">狂咩</p>                        
+                    </li> -->
+                </ul>
+            </div>
+            <div id="listAudio" class="list_audio">
+                <!-- 播放器布局 -->
+                <img id="list_AudioImg" class="list_audioImg" src="img/fh.jpg" alt="">
+                <div id="list_AudioText" class="list_audioText">
+                    <h3 class="title">绯红</h3>
+                    <p class="name">Melod player</p>
+                </div>
+                <div id="list_AudioBtn" class="list_audioBtn"></div>
+            </div>
+        </div>
+        <!-- 详情页 -->
+        <div id="musicDetails">
+            <div id="detailsTitle" class="details_title">
+                <div id="detailsName" class="details_name"></div>
+                <span class="details_tip"></span>
+            </div>
+            <div id="detailsLyric" class="details_lyric">
+                <!-- 歌词 -->
+                <ul id="detailsLyricUl">
+                    <!-- <li>歌词测试</li>
+                    <li class="active">歌词测试</li>
+                    <li>歌词测试</li> -->
+                </ul>
+            </div>
+            <div id="detailsAudio" class="details_audio">
+                <div class="details_audioAll">
+                    <!-- 歌曲进度条 -->
+                    <div class="details_audioPro">
+                        <div id="detailsAudioProUp" class="details_audioProUp"></div>
+                        <div id="detailsAudioProBar" class="details_audioProBar"></div>
+                    </div>
+                    <div id="detailsNowTime" class="details_nowTime">00:00</div>
+                    <div id="detailsAllTime" class="details_allTime">00:00</div>
+                    <div id="detailsPlay" class="details_play"></div>
+                    <div id="detailsPrev" class="details_prev"></div>
+                    <div id="detailsNext" class="details_next"></div>
+                </div>
+            </div>
+            <!-- 留言 -->
+            <div id="detailsMessage" class="details_message">
+                <textarea id="detailsMessageTa" placeholder="随便发言"></textarea>
+                <input id="detailsMessageBtn" type="button" value="发表">
+                <ul id="detailsMessageUl">
+                    <!-- <li>test</li>
+                    <li>test</li>
+                    <li>test</li> -->
+                </ul>
+            </div>
+            <!-- 按钮列表 -->
+            <ul id="detailsBtn" class="details_btn">
+                <li class="active"></li>
+                <li></li>
+            </ul>
+        </div>
+    </div>
+    <audio id="audio1" src=""></audio>
+</body>
+
+</html>
